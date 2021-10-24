@@ -8,47 +8,118 @@ output:
 
 This is final permutation and mixed model analysis for Chan, Yang, Chang, & Kidd (in press)
 
-```{r}
+```{r require-packages}
 knitr::opts_chunk$set(warning = FALSE)
-require(ggplot2)
+require(tidyverse)
 require(lme4)
 require(stringr)
-require(nlme)         ## for lme()
-require(lsmeans)      ## for lsmeans()
+require(nlme)      ## for lme()
+require(lsmeans)   ## for lsmeans()
 require(multcomp)  ## for multiple comparison stuff
 require(remef)
 print(R.version.string)
 print(sessionInfo())
 
 apaformat <- function(p){
-     p = p + theme_bw() # make the theme black-and-white rather than grey (do this before font changes, or it overrides them)
-     p = p + theme(
-          panel.grid.major = element_blank(), # switch off major gridlines
-          panel.grid.minor = element_blank(), # switch off minor gridlines
-          legend.key = element_blank() # switch off the rectangle around symbols in the legend
-     )
-     return(p)
-}
+    # make the theme black-and-white
+    # rather than grey
+    # (do this before font changes, or it overrides them)
+    p = p + theme_bw()
+    p = p + theme(
+          # switch off major gridlines
+          panel.grid.major = element_blank(),
 
+          # switch off minor gridlines
+          panel.grid.minor = element_blank(),
+
+          # switch off the rectangle around symbols in the legend
+          legend.key = element_blank()
+    )
+    return(p)
+}
+```
+
+```{r data-preparation}
 # Create a data frame with onset-offset data for each condition in study
-onsetStimCL = data.frame(SentenceType=c(rep("Subject",3),rep("Object",4)),cat = c("VN","D CL","Head","N","V","D CL","Head"), onset=c(0,0.625,0.91,0,0.412,0.661,0.925))
-onsetStimCL$HeadNoun = "CL"
-onsetStimGE = data.frame(SentenceType=c(rep("Subject",3),rep("Object",4)),cat = c("VN","ge","Head","N","V","ge","Head"), onset=c(0,0.741,0.899,0,0.488,0.756,0.939))
-onsetStimGE$HeadNoun = "ge3"
-onsetStim = rbind(onsetStimCL,onsetStimGE)
-onsetStim$time = onsetStim$onset * 1000
-onsetStim$time2=c(onsetStim$time[2:length(onsetStim$time)],0)
-onsetStim$time2[onsetStim$cat=="Head"] = 1000*c(1.477,1.387,1.454,1.477)
-onsetStim$time2 = c(622,907,1497,  409,658,922,1387,  738, 896, 1454,  485,753, 936, 1477)
-onsetStim$ypos = rep(c(0.95,0.95,0.95,0.75,0.75,0.75,0.75),2)
-onsetStim$target = 1
-onsetStim$restarg = 0
-onsetStim[onsetStim$cat=="Head",]
+onsetStimCL = data.frame(
+  SentenceType = c(
+    rep("Subject", 3),
+    rep("Object", 4)
+    ),
+  cat = c(
+    "VN", "D CL", "Head",
+    "N", "V", "D CL", "Head"
+    ),
+  onset = c(
+    0, 0.625, 0.91,
+    0, 0.412, 0.661, 0.925
+    ),
+  HeadNoun = rep("CL", 7)
+  )
+
+onsetStimGE = data.frame(
+  SentenceType = c(
+    rep("Subject",3),
+    rep("Object",4)
+    ),
+  cat = c(
+    "VN", "ge", "Head",
+    "N", "V", "ge", "Head"
+    ),
+  onset = c(
+    0, 0.741, 0.899,
+    0, 0.488, 0.756, 0.939
+    ),
+  HeadNoun = rep("ge3", 7)
+  )
+
+onsetStim = bind_rows(
+  onsetStimCL,
+  onsetStimGE
+  ) |>
+  mutate(
+    time = onset * 1000,
+    time2 = c(
+      622, 907, 1497, 409,
+      658, 922, 1387, 738,
+      896, 1454, 485, 753,
+      936, 1477
+      ),
+    ypos = rep(
+      c(rep(0.95, 3), rep(0.75, 4)),
+      2
+      ),
+    target = 1,
+    restarg = 0
+  )
+
+
+##  mutate(
+##    time = onset * 1000,
+##    time2 = case_when(
+##        cat == "Head" & SentenceType == "Subject" & HeadNoun == "CL"
+##          ~ 1.477*1000,
+##        cat == "Head" & SentenceType == "Object"  & HeadNoun == "CL"
+##          ~ 1.387*1000,
+##        cat == "Head" & SentenceType == "Subject" & HeadNoun == "ge3"
+##          ~ 1.454*1000,
+##        cat == "Head" & SentenceType == "Object"  & HeadNoun == "ge3"
+##          ~ 1.477*1000,
+##        TRUE ~ lag(
+##          time, 0
+##          )
+##        )
+##    )
+
+onsetStim |>
+  filter(cat == "Head")
 
 aggregate(time2 ~ HeadNoun + cat, onsetStim, mean)
+```
 
+```{r data-eye-movement}
 # load eye-tracking data
-bothdata=read.csv("CanRCeyetracking data-19 for CL &18 for GE-only TTR longer than 200ms.csv")
+bothdata = read_csv("CanRCeyetracking data-19 for CL &18 for GE-only TTR longer than 200ms.csv")
 bothdata$HeadNoun <- factor(bothdata$HeadNoun,labels=c("CL","ge3"))
 bothdata$SentenceType=factor(bothdata$SentenceType,labels=c("Subject","Object"),levels=c("subject","object"))
 
