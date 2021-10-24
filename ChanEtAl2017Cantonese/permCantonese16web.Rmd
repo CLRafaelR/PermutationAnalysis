@@ -10,9 +10,11 @@ This is final permutation and mixed model analysis for Chan, Yang, Chang, & Kidd
 
 ```{r require-packages}
 knitr::opts_chunk$set(warning = FALSE)
+## The following loads ggplot2 and stringr
 require(tidyverse)
-require(lme4)
+
 require(stringr)
+require(lme4)
 require(nlme)      ## for lme()
 require(lsmeans)   ## for lsmeans()
 require(multcomp)  ## for multiple comparison stuff
@@ -119,51 +121,150 @@ aggregate(time2 ~ HeadNoun + cat, onsetStim, mean)
 
 ```{r data-eye-movement}
 # load eye-tracking data
-bothdata = read_csv("CanRCeyetracking data-19 for CL &18 for GE-only TTR longer than 200ms.csv")
-bothdata$HeadNoun <- factor(bothdata$HeadNoun,labels=c("CL","ge3"))
-bothdata$SentenceType=factor(bothdata$SentenceType,labels=c("Subject","Object"),levels=c("subject","object"))
-
-bothdata$Item = str_replace(bothdata$Item,"(S|O)","I")
-bothdata$time = as.numeric(as.character(bothdata$time))
-bothdata$time = bothdata$time * 1000
-bothdata$target = bothdata$T
+# with `reader::read_csv` (from tidyverse)
+#
+# `reader::read_csv` interprets the data with
+# greater acurracy than `base::read.csv` and
+# `reader::read_csv` prunes the following line:
+# bothdata$time = as.numeric(as.character(bothdata$time))
+bothdata = read_csv("CanRCeyetracking data-19 for CL &18 for GE-only TTR longer than 200ms.csv")  |>
+  mutate(
+    HeadNoun = factor(
+      HeadNoun,
+      labels = c("CL", "ge3")
+      ),
+    SentenceType = factor(
+      SentenceType,
+      labels = c("Subject", "Object"),
+      levels = c("subject", "object")
+      ),
+    Item = str_replace(
+      Item,
+      "(S|O)",
+      "I"
+      ),
+  time = time * 1000,
+  target = `T`
+  )
 
 xtabs(~ Item + HeadNoun, bothdata)
 xtabs(~ Item + SentenceType, bothdata)
+```
 
+```{r figure-eye-movement}
 # Figure to see raw data
-means.df = aggregate(cbind(target) ~ time + HeadNoun + SentenceType, bothdata, mean)
-p = ggplot(means.df , aes( x = time, y = target, colour=SentenceType))
-p = p + geom_line()
-p = p + scale_colour_brewer(palette="Set1")
-p = p + theme_bw()   # change background to white
-p = p + ylab("Target Proportions")
-#p = p + ylim(0,1)
-p = p + facet_wrap(~ HeadNoun, ncol=1)
-p = p + geom_rect(data=onsetStim,aes(xmin=time,xmax = time2-33, ymin=ypos-0.13, ymax=ypos,colour=SentenceType),fill=NA, show.legend=FALSE)
-p = p + geom_text(data=onsetStim,aes(x=(time+time2)/2, y=ypos-0.05, label=cat),hjust=0.7,size=3,show.legend=FALSE)
-p
+#means.df = 
+aggregate(
+  cbind(target) ~ time + HeadNoun + SentenceType,
+  bothdata, mean
+  ) |> 
+  ggplot(
+    aes(
+      x = time,
+      y = target,
+      colour=SentenceType
+      )
+    ) +
+  geom_line() +
+  scale_colour_brewer(palette="Set1") +
+  # change background to white
+  theme_bw() +
+  ylab("Target Proportions") +
+  #ylim(0,1) +
+  facet_wrap(~ HeadNoun, ncol=1) +
+  geom_rect(
+    data = onsetStim,
+    aes(
+      xmin = time,
+      xmax = time2-33,
+      ymin = ypos-0.13,
+      ymax = ypos,
+      colour = SentenceType
+      ),
+    fill = NA,
+    show.legend = FALSE
+    ) +
+  geom_text(
+    data = onsetStim,
+    aes(
+      x = (time+time2)/2,
+      y = ypos-0.05,
+      label = cat
+      ),
+    hjust = 0.7,
+    size = 3,
+    show.legend = FALSE
+  )
 ```
 
 Above is the raw data, below we remove the mean of time 0.
 
 ```{r}
-meansubset = subset(bothdata,time == 0)
-meanpartitemdf = aggregate(target ~  Participant + Item + HeadNoun + SentenceType, meansubset, mean)
-both = merge(bothdata,meanpartitemdf, all.x=TRUE,by=c("Participant","Item","HeadNoun","SentenceType"),sort=F)
-both$target = both$target.x-both$target.y
+meanpartitemdf = bothdata |>
+  filter(time == 0) %>% 
+  aggregate(
+    target ~  Participant + Item + HeadNoun + SentenceType,
+    ., mean
+  )
+
+both = merge(
+  bothdata,
+  meanpartitemdf,
+  all.x = TRUE,
+  by = c(
+    "Participant",
+    "Item",
+    "HeadNoun",
+    "SentenceType"
+    ),
+  sort = F
+  ) |>
+  mutate(
+    target = target.x - target.y
+  )
+```
+
+```{r figure-both}
 # plot figure for dataset
-means.df = aggregate(cbind(target) ~ time + HeadNoun + SentenceType, both, mean)
-p = ggplot(means.df , aes( x = time, y = target, colour=SentenceType))
-p = p + geom_line()
-p = p + scale_colour_brewer(palette="Set1")
-p = p + theme_bw()   # change background to white
-p = p + ylab("Looks to target")
-#p = p + ylim(0,1)
-p = p + facet_wrap(~ HeadNoun, ncol=1)
-p = p + geom_rect(data=onsetStim,aes(xmin=time,xmax = time2-33, ymin=ypos-0.13, ymax=ypos,colour=SentenceType),fill=NA, show.legend=FALSE)
-p = p + geom_text(data=onsetStim,aes(x=(time+time2)/2, y=ypos-0.05, label=cat),size=3,show.legend=FALSE)
-p
+aggregate(
+  cbind(target) ~ time + HeadNoun + SentenceType,
+  both, mean
+  ) |>
+  ggplot(
+    aes(
+      x = time,
+      y = target,
+      colour=SentenceType
+      )
+    ) +
+  geom_line() +
+  scale_colour_brewer(palette = "Set1") +
+  # change background to white
+  theme_bw() +
+  ylab("Looks to target") +
+  #ylim(0,1) +
+  facet_wrap(~ HeadNoun, ncol=1) +
+  geom_rect(
+    data = onsetStim,
+    aes(
+      xmin = time,
+      xmax = time2-33,
+      ymin = ypos-0.13,
+      ymax = ypos,
+      colour = SentenceType
+      ),
+    fill = NA,
+    show.legend = FALSE
+    ) +
+    geom_text(
+      data = onsetStim,
+      aes(
+        x = (time+time2)/2,
+        y = ypos-0.05,
+        label = cat),
+        size = 3,
+        show.legend = FALSE
+    )
 ```
 
 Here is a mixed model analysis using 200 ms windows
