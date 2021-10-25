@@ -41,6 +41,27 @@ apaformat <- function(p){
 }
 ```
 
+In the following code chunks,
+the combination of `tidyverse` functions and pipe (`|>`), rather than base functions, are applied.
+Such 'tidy' methods will enhance the readability of the codes
+and speed of the code evaluation.
+Moreover, the tidy methods enable you to save memory,
+since you do not have to create intermediate objects.
+
+Although the application of the tidy methods may change the row order in a data frame,
+the row values are identical.
+You can check this by runnning:
+
+```
+dplyr::all_equal(
+  data.frame.created.by.base.function,
+  corresponding.data.frame.created.by.tidy.methods,
+  ignore_col_order = FALSE,
+  ignore_row_order = FALSE,
+  convert = TRUE
+  )
+```
+
 ```{r data-preparation}
 # Create a data frame with onset-offset data for each condition in study
 onsetStimCL = data.frame(
@@ -61,8 +82,8 @@ onsetStimCL = data.frame(
 
 onsetStimGE = data.frame(
   SentenceType = c(
-    rep("Subject",3),
-    rep("Object",4)
+    rep("Subject", 3),
+    rep("Object", 4)
     ),
   cat = c(
     "VN", "ge", "Head",
@@ -116,7 +137,13 @@ onsetStim = bind_rows(
 onsetStim |>
   filter(cat == "Head")
 
-aggregate(time2 ~ HeadNoun + cat, onsetStim, mean)
+onsetStim |>
+  group_by(
+    HeadNoun, cat
+  ) |> 
+  summarise(
+    time2 = mean(time2)
+  )
 ```
 
 ```{r data-eye-movement}
@@ -151,13 +178,15 @@ xtabs(~ Item + HeadNoun, bothdata)
 xtabs(~ Item + SentenceType, bothdata)
 ```
 
+1. Group `bothdata` by the columns `time`, `HeadNoun`, and `SentenceType` using `dplyr::group_by()`
+2. Calculate the mean proportion of gaze to `target` by the group created using `dplyr::group_by(time, HeadNoun, SentenceType)`
+3. Plot the mean proportion of gaze to `target` using `ggplot2::ggplot()`
+
 ```{r figure-eye-movement}
 # Figure to see raw data
-#means.df = 
-aggregate(
-  cbind(target) ~ time + HeadNoun + SentenceType,
-  bothdata, mean
-  ) |> 
+bothdata |>
+  group_by(time, HeadNoun, SentenceType) |>
+  summarise(target = mean(target)) |>
   ggplot(
     aes(
       x = time,
@@ -199,42 +228,53 @@ aggregate(
 
 Above is the raw data, below we remove the mean of time 0.
 
-```{r}
-meanpartitemdf = bothdata |>
-  filter(time == 0) %>% 
-  aggregate(
-    target ~  Participant + Item + HeadNoun + SentenceType,
-    ., mean
-  )
+1. Assign the following data to the object named `both`
+2. From `bothdata`, `filter` out the data whose `time` is 0 
+3. Group that data by the columns `Participant`, `Item`, `HeadNoun`, and `SentenceType` using `dplyr::group_by()`
+4. Calculate the mean proportion of gaze to `target` by the group created using `dplyr::group_by(Participant, Item, HeadNoun, SentenceType)`
+5. `Join` that filtered data to the original `bothdata` by the columns `Participant`, `Item`, `HeadNoun`, and `SentenceType`; at the same time, attach `suffix`es to the duplicate columns (especially the column `target`), so that you can identify which data frame the duplicate columns originally came from.
+6. `Mutate` the joined data, so that its `target` indicates the subtraction of `target.filtered` from `target.original`
 
-both = merge(
-  bothdata,
-  meanpartitemdf,
-  all.x = TRUE,
-  by = c(
-    "Participant",
-    "Item",
-    "HeadNoun",
-    "SentenceType"
-    ),
-  sort = F
+```{r preparation-both-data}
+both <- bothdata |>
+  filter(time == 0) |>
+  group_by(Participant, Item, HeadNoun, SentenceType) |>
+  summarise(target = mean(target)) |>
+  right_join(
+    # filtered `bothdata` is the first data frame to be combined
+    #`bothdata` is the second data frame to be combined
+    bothdata,
+    by = c(
+      "Participant",
+      "Item",
+      "HeadNoun",
+      "SentenceType"
+      ),
+    # Suffixes must be in this order,
+    # since filtered `bothdata` is the first data frame and
+    # original `bothdata` is the second:
+    suffix = c(".filtered", ".original")
   ) |>
   mutate(
-    target = target.x - target.y
+    target = target.original - target.filtered
   )
 ```
 
+
 ```{r figure-both}
 # plot figure for dataset
-aggregate(
-  cbind(target) ~ time + HeadNoun + SentenceType,
-  both, mean
+both |>
+  group_by(
+    time, HeadNoun, SentenceType
+  ) |> 
+  summarise(
+    target = mean(target)
   ) |>
   ggplot(
     aes(
       x = time,
       y = target,
-      colour=SentenceType
+      colour = SentenceType
       )
     ) +
   geom_line() +
@@ -243,13 +283,13 @@ aggregate(
   theme_bw() +
   ylab("Looks to target") +
   #ylim(0,1) +
-  facet_wrap(~ HeadNoun, ncol=1) +
+  facet_wrap(~ HeadNoun, ncol = 1) +
   geom_rect(
     data = onsetStim,
     aes(
       xmin = time,
-      xmax = time2-33,
-      ymin = ypos-0.13,
+      xmax = time2 - 33,
+      ymin = ypos - 0.13,
       ymax = ypos,
       colour = SentenceType
       ),
@@ -259,8 +299,8 @@ aggregate(
     geom_text(
       data = onsetStim,
       aes(
-        x = (time+time2)/2,
-        y = ypos-0.05,
+        x = (time + time2)/2,
+        y = ypos - 0.05,
         label = cat),
         size = 3,
         show.legend = FALSE
