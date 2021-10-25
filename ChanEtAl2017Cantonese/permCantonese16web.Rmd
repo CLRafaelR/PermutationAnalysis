@@ -10,6 +10,8 @@ This is final permutation and mixed model analysis for Chan, Yang, Chang, & Kidd
 
 ```{r require-packages}
 knitr::opts_chunk$set(warning = FALSE)
+knitr::knit_theme$set("zmrok")
+
 ## The following loads ggplot2 and stringr
 require(tidyverse)
 
