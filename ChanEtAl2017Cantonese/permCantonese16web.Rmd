@@ -15,6 +15,22 @@ knitr::knit_theme$set("zmrok")
 ## The following loads ggplot2 and stringr
 require(tidyverse)
 
+##---------------------------------------------------
+##
+## Load pipes
+## In this document, the native pipe `|>`,
+## which is from base, is usually used
+## to replace magrittr's `%>%` with,
+## since `|>`'s process is faster than `%>%`'s.
+## 
+## However, magrittr is necessary since it provides
+## far more varieties of functions, such as
+## the exposition pipe `%$% `
+## the assign pipe `%<>% `
+## the Tee pipe `%T>% `
+##---------------------------------------------------
+require(magrittr)
+
 require(stringr)
 require(lme4)
 require(nlme)      ## for lme()
@@ -142,10 +158,11 @@ onsetStim |>
 onsetStim |>
   group_by(
     HeadNoun, cat
-  ) |> 
+  ) |>
   summarise(
     time2 = mean(time2)
-  )
+  ) |>
+  ungroup()
 ```
 
 ```{r data-eye-movement}
@@ -182,13 +199,15 @@ xtabs(~ Item + SentenceType, bothdata)
 
 1. Group `bothdata` by the columns `time`, `HeadNoun`, and `SentenceType` using `dplyr::group_by()`
 2. Calculate the mean proportion of gaze to `target` by the group created using `dplyr::group_by(time, HeadNoun, SentenceType)`
-3. Plot the mean proportion of gaze to `target` using `ggplot2::ggplot()`
+3. Ungroup (Remove grouping)
+4. Plot the mean proportion of gaze to `target` using `ggplot2::ggplot()`
 
 ```{r figure-eye-movement}
 # Figure to see raw data
 bothdata |>
   group_by(time, HeadNoun, SentenceType) |>
   summarise(target = mean(target)) |>
+  ungroup() |>
   ggplot(
     aes(
       x = time,
@@ -234,14 +253,16 @@ Above is the raw data, below we remove the mean of time 0.
 2. From `bothdata`, `filter` out the data whose `time` is 0 
 3. Group that data by the columns `Participant`, `Item`, `HeadNoun`, and `SentenceType` using `dplyr::group_by()`
 4. Calculate the mean proportion of gaze to `target` by the group created using `dplyr::group_by(Participant, Item, HeadNoun, SentenceType)`
-5. `Join` that filtered data to the original `bothdata` by the columns `Participant`, `Item`, `HeadNoun`, and `SentenceType`; at the same time, attach `suffix`es to the duplicate columns (especially the column `target`), so that you can identify which data frame the duplicate columns originally came from.
-6. `Mutate` the joined data, so that its `target` indicates the subtraction of `target.filtered` from `target.original`
+5. Ungroup
+6. `Join` that filtered data to the original `bothdata` by the columns `Participant`, `Item`, `HeadNoun`, and `SentenceType`; at the same time, attach `suffix`es to the duplicate columns (especially the column `target`), so that you can identify which data frame the duplicate columns originally came from.
+7. `Mutate` the joined data, so that its `target` indicates the subtraction of `target.filtered` from `target.original`
 
 ```{r preparation-both-data}
 both <- bothdata |>
   filter(time == 0) |>
   group_by(Participant, Item, HeadNoun, SentenceType) |>
   summarise(target = mean(target)) |>
+  ungroup() |>
   right_join(
     # filtered `bothdata` is the first data frame to be combined
     #`bothdata` is the second data frame to be combined
@@ -272,6 +293,7 @@ both |>
   summarise(
     target = mean(target)
   ) |>
+  ungroup() |>
   ggplot(
     aes(
       x = time,
@@ -315,48 +337,194 @@ Here is a mixed model analysis using 200 ms windows
 winsize = 200
 
 #unique(both$time)
-both$win = as.integer((both$time+10)/winsize)
+
+both <- both |> 
+  mutate(
+    win = as.integer((time+10)/winsize)
+  )
+
 xtabs(~ win, both)
-both2 = subset(both, win != 12 & !is.na(time)) # not enough data in 12
+
+# not enough data in 12
+both2 <- both |>
+  filter(
+    win != 12,
+    !is.na(time)
+  )
+
 xtabs(~ win, both2)
+
 xtabs(~ Item + HeadNoun, both)
+
 xtabs(~ Participant + SentenceType, both)
 
-subjmeans.df = aggregate(target ~ win + HeadNoun + SentenceType + Participant + Item, both, mean)
-subjmeans.df$time=subjmeans.df$win*winsize
-subjmeans.df$cwin = subjmeans.df$win - mean(subjmeans.df$win)
-subjmeans.df$cCL = ifelse(subjmeans.df$HeadNoun == "CL",0.5,-0.5)
-subjmeans.df$cobject = ifelse(subjmeans.df$SentenceType == "Object",0.5,-0.5)
-subjmeans.df$Participant=factor(subjmeans.df$Participant)
-subjmeans.df$Item=factor(subjmeans.df$Item)
-mixmodel = lmer(target ~ cwin*cCL*cobject + (1 + SentenceType| Participant) + (1+SentenceType | Item), subjmeans.df)
-summixed=summary(mixmodel)
-print(summixed)
+subjmeans.df <- both |>
+  group_by(
+    win, HeadNoun, SentenceType, Participant, Item
+  ) |>
+  summarise(
+    target = mean(target)
+  ) |>
+  ungroup() |>
+  mutate(
+    time = win * winsize,
+    cwin = win - mean(win),#scale(win, scale = FALSE),
+    cCL = if_else(
+      HeadNoun == "CL",
+      0.5,
+      -0.5
+      ),
+    cobject = if_else(
+      SentenceType == "Object",
+      0.5,
+      -0.5
+      ),
+    Participant = factor(Participant),
+    Item = factor(Item)
+  )
+```
 
-clwin8 = subset(subjmeans.df, win==8 & HeadNoun == "CL")
-mixmodel8cl = lmer(target ~ cobject + (1+SentenceType | Participant) + (1+SentenceType | Item), clwin8)
-print(summary(mixmodel8cl))
-ge3win9 = subset(subjmeans.df, win==9 & HeadNoun == "ge3")
-ge3win10 = subset(subjmeans.df, win==10 & HeadNoun == "ge3")
-ge3win9$target2 = ge3win10$target
-print(cor(ge3win9$target,ge3win9$target2))
+```{r lmer-all-window}
+mixmodel = lmer(
+  target ~ cwin*cCL*cobject +
+    (1 + SentenceType | Participant) +
+    (1+SentenceType | Item),
+  subjmeans.df
+  )
+
+mixmodel |>
+  summary() |>
+  print()
+```
+
+```{r lmer-8th-window}
+subjmeans.df |>
+  filter(
+    win == 8,
+    HeadNoun == "CL"
+  ) |>
+  #### lmer()
+  (
+    \(x) lmer(
+      target ~ cobject + 
+        (1+SentenceType | Participant) +
+        (1+SentenceType | Item),
+      data = x
+      )
+  )() |>
+    summary() |>
+    print()
+```
+
+```{r cor-9th-10th}
+subjmeans.df |>
+  filter(
+    win == 9,
+    HeadNoun == "ge3"
+  ) |>
+  dplyr::select(
+    target
+  ) |>
+  cor(
+    subjmeans.df |>
+      filter(
+        win == 10,
+        HeadNoun == "ge3"
+      ) |>
+    dplyr::select(
+      target
+    )
+  )
+
+subjmeans.df %>%
+  {
+    filter(
+      .,
+      win == 9,
+      HeadNoun == "ge3"
+    ) |>
+    dplyr::select(
+      target
+    )
+
+    filter(
+      .,
+      win == 10,
+      HeadNoun == "ge3"
+    ) |>
+    dplyr::select(
+      target
+    )
+  } %>% View()
+
+subjmeans.df |>
+  (\(x) {
+    filter(
+      x,
+      win == 9,
+      HeadNoun == "ge3"
+    ) |>
+    dplyr::select(
+      target
+    )
+
+    filter(
+      x,
+      win == 10,
+      HeadNoun == "ge3"
+    ) |>
+    dplyr::select(
+      target
+    )
+  })() #|> cor(9thge3, 10thge3)
 ```
 
 Since we have a significant three way interaction of HeadNoun, SentenceType, and window, we can do posthocs.
 We use lsmeans to do contrasts between obj and sub for each window in each HeadNoun.
 lsmeans also adjusts p automatically for the number of comparisons.
 
+```{r coding-setting}
+#options("contrasts")
+
+# Dummy coding (`contr.treatment`) for an unordered factor
+# Orthogonal polynomial coding (`contr.poly`) for an ordered factor
+options(
+  contrasts = c(
+    "contr.treatment",
+    "contr.poly"
+    )
+  )
+```
+
+```{r data-for-posthoc}
+subjmeans.df <- subjmeans.df |>
+  mutate(
+    win = as_factor(win),
+    HeadNoun = factor(HeadNoun),
+    SentenceType = factor(SentenceType)
+  )
+```
+
 ```{r}
-options(contrasts = c("contr.treatment", "contr.poly"))
-subjmeans.df$win = factor(subjmeans.df$win)
-subjmeans.df$HeadNoun = factor(subjmeans.df$HeadNoun)
-subjmeans.df$SentenceType = factor(subjmeans.df$SentenceType)
-mixmodelFactor = lmer(target ~ win*SentenceType*HeadNoun + (1 + SentenceType| Participant) + (1+SentenceType | Item), subjmeans.df)
-model.lsmobj <- lsmeans(mixmodelFactor, ~ SentenceType | win*HeadNoun)
-posthocs = summary(as.glht(pairs(model.lsmobj)))
-print(posthocs)
+mixmodelFactor = lmer(
+  target ~ win * SentenceType * HeadNoun +
+  (1 + SentenceType | Participant) +
+  (1 + SentenceType | Item),
+  subjmeans.df
+  )
+
+model.lsmobj <- lsmeans(
+  mixmodelFactor,
+  ~ SentenceType | win * HeadNoun
+  )
+
+model.lsmobj |>
+  pairs() |>
+  as.glht() |>
+  summary()
 
 subjmeans.df$pred <- remef(mixmodelFactor, ran = "all")
+
 means2.df = aggregate(cbind(pred,target) ~ time + HeadNoun + SentenceType, subjmeans.df, mean)
 timelist = as.integer(unique(subjmeans.df$time))
 p = ggplot(means2.df , aes( x = time, y = target, colour=SentenceType))
