@@ -416,7 +416,7 @@ subjmeans.df |>
     print()
 ```
 
-```{r cor-9th-10th}
+```{r cor-9th-10th-pipe-1}
 subjmeans.df |>
   filter(
     win == 9,
@@ -435,48 +435,59 @@ subjmeans.df |>
       target
     )
   )
+```
 
-subjmeans.df %>%
-  {
-    filter(
-      .,
-      win == 9,
-      HeadNoun == "ge3"
-    ) |>
-    dplyr::select(
-      target
-    )
-
-    filter(
-      .,
-      win == 10,
-      HeadNoun == "ge3"
-    ) |>
-    dplyr::select(
-      target
-    )
-  } %>% View()
-
+```{r cor-9th-10th-pipe-2}
 subjmeans.df |>
   (\(x) {
     filter(
       x,
       win == 9,
       HeadNoun == "ge3"
-    ) |>
-    dplyr::select(
-      target
-    )
+      ) |>
+      dplyr::select(target) ->
+      Ge3.9th
 
     filter(
       x,
       win == 10,
       HeadNoun == "ge3"
-    ) |>
-    dplyr::select(
-      target
+      ) |>
+      dplyr::select(target) ->
+      Ge3.10th
+
+    list(Ge3.9th, Ge3.10th)
+  })() |>
+  (
+    \(x){
+      cor(x[[1]], x[[2]])
+      }
+  )()
+```
+
+```{r cor-9th-10th-pipe-3}
+subjmeans.df |>
+  (\(x){
+    list(
+      filter(
+        x,
+        win == 9,
+        HeadNoun == "ge3"
+        ) |>
+        dplyr::select(target),
+      filter(
+        x,
+        win == 10,
+        HeadNoun == "ge3"
+        ) |>
+        dplyr::select(target)
     )
-  })() #|> cor(9thge3, 10thge3)
+  })() |>
+  (
+    \(x){
+      cor(x[[1]], x[[2]])
+      }
+  )()
 ```
 
 Since we have a significant three way interaction of HeadNoun, SentenceType, and window, we can do posthocs.
