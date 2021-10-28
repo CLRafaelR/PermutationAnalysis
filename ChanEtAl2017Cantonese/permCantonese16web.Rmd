@@ -40,22 +40,21 @@ require(remef)
 print(R.version.string)
 print(sessionInfo())
 
-apaformat <- function(p){
-    # make the theme black-and-white
-    # rather than grey
-    # (do this before font changes, or it overrides them)
-    p = p + theme_bw()
-    p = p + theme(
-          # switch off major gridlines
-          panel.grid.major = element_blank(),
+apaformat <- function(){
+  # make the theme black-and-white
+  # rather than grey
+  # (do this before font changes, or it overrides them)
+  theme_bw() +
+  theme(
+    # switch off major gridlines
+    panel.grid.major = element_blank(),
 
-          # switch off minor gridlines
-          panel.grid.minor = element_blank(),
+    # switch off minor gridlines
+    panel.grid.minor = element_blank(),
 
-          # switch off the rectangle around symbols in the legend
-          legend.key = element_blank()
-    )
-    return(p)
+    # switch off the rectangle around symbols in the legend
+    legend.key = element_blank()
+  )
 }
 ```
 
@@ -524,55 +523,115 @@ mixmodelFactor = lmer(
   subjmeans.df
   )
 
-model.lsmobj <- lsmeans(
+posthocs <- lsmeans(
   mixmodelFactor,
   ~ SentenceType | win * HeadNoun
-  )
-
-model.lsmobj |>
+  ) |>
   pairs() |>
   as.glht() |>
   summary()
+```
 
-subjmeans.df$pred <- remef(mixmodelFactor, ran = "all")
+```{r }
+subjmeans.df <- subjmeans.df |>
+  mutate(
+    pred = remef(mixmodelFactor, ran = "all")
+  )
 
-means2.df = aggregate(cbind(pred,target) ~ time + HeadNoun + SentenceType, subjmeans.df, mean)
-timelist = as.integer(unique(subjmeans.df$time))
-p = ggplot(means2.df , aes( x = time, y = target, colour=SentenceType))
-meanwin= data.frame(time= rep(timelist,2),HeadNoun=rep(c("CL","ge3"),each=length(timelist)))
-meanwin$pval = as.numeric(lapply(posthocs, function(x){ return( x$test$pvalues[1]) }) )
-meanwin$target = 0
-meanwin$pred =0
-meanwin$SentenceType = "Object"
-meansigPost = subset(meanwin,pval < 0.05) 
-# color them grey
-p = p + geom_rect(data=meansigPost,aes(xmin=time, xmax=time+winsize, ymin = 0, ymax= 1.0),,colour=NA,fill="grey90",show.legend=FALSE)
-p = p + geom_line()
-p = p + facet_wrap(~ HeadNoun, ncol=1)
-p = p + scale_colour_brewer(palette="Set1")
-p = p + scale_fill_brewer(palette="Set2")
-p = p + geom_vline(xintercept = seq(0,2600,by=winsize),colour="black", linetype = 2)
-apaformat(p)
+timelist <- subjmeans.df$time |>
+  unique() |>
+  as.integer()
+
+meansigPost <- tibble(
+  time = rep(timelist, 2),
+  HeadNoun = rep(c("CL", "ge3"), each = length(timelist)),
+  pval = as.numeric(
+    purrr::map(
+      posthocs,
+      ~ { return(.x$test$pvalues[1]) }
+      )
+    ),
+  target = 0,
+  pred = 0,
+  SentenceType = "Object"
+  ) |>
+  filter(pval < 0.05)
+```
+
+```{r figure}
+subjmeans.df |>
+  group_by(
+    time, HeadNoun, SentenceType
+  ) |>
+  summarise(
+    pred = mean(pred),
+    target = mean(target)
+  ) |>
+  ungroup() |>
+  ggplot(
+    aes(
+      x = time,
+      y = target,
+      colour = SentenceType
+      )
+    ) +
+  # color them grey
+  geom_rect(
+    data = meansigPost,
+    aes(
+      xmin = time,
+      xmax = time + winsize,
+      ymin = -Inf,
+      ymax = Inf
+      ),
+      colour = NA,
+      fill = "grey90",
+      show.legend = FALSE
+      ) +
+  geom_line() +
+  facet_wrap(
+    ~ HeadNoun,
+    ncol = 1
+    ) +
+  scale_colour_brewer(palette = "Set1") +
+  scale_fill_brewer(palette = "Set2") +
+  geom_vline(
+    xintercept = seq(0, 2600, by = winsize),
+    colour = "black",
+    linetype = "dashed" #2
+    ) +
+  apaformat()
 ```
 
 This is the permutation analysis
 
 ```{r}
 # create copy of data frame
-pdata = both[!is.na(both$time),]
 wdivsize = 1
-pdata$cobject = ifelse(pdata$SentenceType == "Subject",0.5,-0.5)
-pdata$win = as.integer(pdata$time/wdivsize)
-pdata$time = pdata$win*wdivsize
+pdata <- both |>
+  filter(!is.na(time)) |>
+  mutate(
+    cobject = if_else(SentenceType == "Subject", 0.5, -0.5),
+    win = as.integer(time/wdivsize),
+    time = win * wdivsize
+  )
 
-# create data frame which averages over subjects.  
+# create data frame which averages over subjects.
 # This also stores the results of the permutation analysis
-means.df = aggregate(target ~ SentenceType + cobject + time + HeadNoun, pdata, mean)
-means.df$pstr = 1000
+means.df <- pdata |>
+  group_by(
+    SentenceType, cobject, time, HeadNoun
+  ) |>
+  summarise(
+    target = mean(target)
+  ) |>
+  ungroup() |>
+  mutate(pstr = 1000)
+
 
 # We do this for each timebin in the data
 timelist = unique(pdata$time)
-for (l in c("CL","ge3")){
+for (l in c("CL", "ge3")){
   for (t in timelist){
     # create data frame for ONE timebin for each HeadNoun level
     onetime = subset(pdata,time == t & HeadNoun == l)
