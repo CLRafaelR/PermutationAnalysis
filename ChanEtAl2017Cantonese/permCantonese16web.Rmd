@@ -626,43 +626,147 @@ means.df <- pdata |>
     target = mean(target)
   ) |>
   ungroup() |>
-  mutate(pstr = 1000)
-
+  mutate(
+    tstr = NA,
+    pstr = 1000
+    )
 
 # We do this for each timebin in the data
 timelist = unique(pdata$time)
+
+tictoc::tic()
 for (l in c("CL", "ge3")){
   for (t in timelist){
     # create data frame for ONE timebin for each HeadNoun level
-    onetime = subset(pdata,time == t & HeadNoun == l)
-    # do regression model on target using structure SentenceTypeition
-    onemodel = lm(target ~ cobject, onetime)
-    # print(summary(tarmodel))
-    # this is the t-value for structure
-    targetT = coef(summary(onemodel))[2,3]  # observed t-value
-    targetP = abs(coef(summary(onemodel))[2,4])  # observed p-value
-    means.df$tstr[means.df$time == t & means.df$HeadNoun == l] = targetT
-    means.df$pstr[means.df$time == t & means.df$HeadNoun == l] = targetP
+    pdata |>
+      filter(time == t & HeadNoun == l) |>
+    # and do regression model on target using structure SentenceTypeition
+      (
+        \(x){
+          lm(target ~ cobject, x)
+        }
+      )() |>
+      summary() |>
+      broom::tidy() |>
+      # this is the t-value and p-value for structure
+      filter(term == "cobject") |>
+      (
+        \(x){
+          means.df <<- means.df |>
+            mutate(
+              tstr = case_when(
+                time == t & HeadNoun == l ~
+                # extraction of the observed t-value
+                x |>
+                  dplyr::select("statistic") |>
+                  pull(),
+                TRUE ~ tstr
+                ),
+              pstr = case_when(
+                time == t & HeadNoun == l ~
+                # extraction of the observed p-value
+                x |>
+                  dplyr::select("p.value") |>
+                  pull(),
+                TRUE ~ pstr
+                )
+            )
+        }
+      )()
   }
 }
+tictoc::toc()
+
+tictoc::tic()
+walk2(
+  .x = rep(timelist, length(c("CL", "ge3"))),
+  .y = rep(c("CL", "ge3"), each = length(timelist)),
+  ~ {
+      # create data frame for ONE timebin for each HeadNoun level
+      pdata |>
+        filter(time == .x & HeadNoun == .y) |>
+        # and do regression model on target using structure SentenceTypeition
+        (
+          \(x){
+            lm(target ~ cobject, x)
+          }
+        )() |>
+        summary() |>
+        broom::tidy() |>
+        # this is the t-value and p-value for structure
+        filter(term == "cobject") |>
+        (
+          \(x){
+            means.df <<- means.df |>
+              mutate(
+                tstr = case_when(
+                  time == .x & HeadNoun == .y ~
+                  # extraction of the observed t-value
+                  x |>
+                    dplyr::select("statistic") |>
+                    pull(),
+                  TRUE ~ tstr
+                  ),
+                pstr = case_when(
+                  time == .x & HeadNoun == .y ~
+                  # extraction of the observed p-value
+                  x |>
+                    dplyr::select("p.value") |>
+                    pull(),
+                  TRUE ~ pstr
+                  )
+              )
+          }
+        )()
+    }
+)
+tictoc::toc()
+
+means.df
 
 # to see these p-values, we draw them arbitrarily on the graph at 0.2.
 # when the p-value < 0.05, we draw a blue line above 0.2
 # when the p-value > 0.05, we draw an orange line below 0.2
 pliney = -0.1
 plinemax = 0.2
-means.df$pline = pliney+plinemax*(0.05-means.df$pstr)
-means.df$plinecol = ifelse(means.df$pstr < 0.05,"a","b")
+
+means.df <- means.df |>
+  mutate(
+    pline = pliney + plinemax * (0.05 - pstr),
+    plinecol = if_else(pstr < 0.05, "a", "b"),
+    SentenceType = factor(
+      SentenceType,
+      levels = c("Subject","Object")
+      )
+  )
+
 wsize = mean(pdata$time[2:5] - pdata$time[1:4] - 8)/2
-means.df$SentenceType=factor(means.df$SentenceType,levels=c("Subject","Object"))
-p = ggplot(means.df , aes( x = time, y = target, colour=SentenceType))
-p = p + geom_line()
-p = p + scale_colour_brewer(palette="Set1")
-p = p + scale_fill_brewer(palette="Set2")
-p = p + theme_bw()   # change background to white
-p = p + facet_wrap(~ HeadNoun, ncol=1)
-p = p + geom_rect(aes(xmin=time-wsize, xmax=time+wsize, ymin = pliney, ymax= pline, fill=plinecol),colour=NA,show.legend=FALSE)
-p
+
+ggplot(
+  means.df,
+  aes(
+    x = time,
+    y = target,
+    colour = SentenceType
+    )
+  ) +
+  geom_line() +
+  scale_colour_brewer(palette = "Set1") +
+  scale_fill_brewer(palette = "Set2") +
+  # change background to white
+  theme_bw() +
+  facet_wrap(~ HeadNoun, ncol = 1) +
+  geom_rect(
+    aes(
+      xmin = time-wsize,
+      xmax = time+wsize,
+      ymin = pliney,
+      ymax = pline,
+      fill = plinecol
+      ),
+    colour = NA,
+    show.legend = FALSE
+    )
 ```
 
 ```{r}
@@ -672,8 +776,12 @@ p
 cnum = 1
 lastpval = 100
 lasttdir = 1
-means.df$cnum = 1
-for (l in c("CL","ge3")){
+means.df <- means.df |>
+  mutate(
+    cnum = 1
+  )
+
+for (l in c("CL", "ge3")){
   for (t in timelist[2:length(timelist)]){
     onetime = subset(means.df,time == t & HeadNoun == l & SentenceType == "Object")
     pval = abs(onetime$pstr)
@@ -681,12 +789,12 @@ for (l in c("CL","ge3")){
     if (pval < 0.05 & lastpval > 0.05 ){
       cnum = cnum + 1  # increase cluster number when entering a significant cluster from a non-significant cluster
     }
-    if (pval > 0.05 ){  
+    if (pval > 0.05 ){
       cnum = cnum + 1 # increase cluster number when not significant
     }else{
       # if t value flips direction, even if both are signif, 
       # we should treat those as separate clusters
-      if (lasttdir*tdir < 0){
+      if (lasttdir * tdir < 0){
         cnum = cnum + 1 
       }
     }
@@ -694,20 +802,38 @@ for (l in c("CL","ge3")){
     lasttdir = tdir
     means.df$cnum[means.df$time == t & means.df$HeadNoun == l] = cnum
   }
-  cnum=cnum+1  # new cluster for different HeadNounuages
+  cnum = cnum + 1  # new cluster for different HeadNounuages
 }
-head(means.df,10)
+head(means.df, 10)
 
 # this shows the clusters
-p = ggplot(means.df , aes( x = time, y = target, colour=SentenceType, label=cnum))
-p = p + scale_colour_brewer(palette="Set1")
-p = p + scale_fill_brewer(palette="Set2")
-p = p + theme_bw()   # change background to white
-p = p + ylab("Looks to passive match")
-#p = p + ylim(0,1)
-p = p + facet_wrap(~ HeadNoun, ncol=1)
-p = p + geom_rect(aes(xmin=time-wsize, xmax=time+wsize, ymin = pliney, ymax= pline, fill=plinecol),colour=NA,show.legend=FALSE)
-p + geom_text(size=2)
+ggplot(
+  means.df,
+  aes(
+    x = time,
+    y = target,
+    colour = SentenceType,
+    label = cnum
+    )
+  ) +
+scale_colour_brewer(palette = "Set1") +
+scale_fill_brewer(palette = "Set2") +
+theme_bw() +   # change background to white
+ylab("Looks to passive match") +
+#ylim(0,1) +
+facet_wrap(~ HeadNoun, ncol=1) +
+geom_rect(
+  aes(
+    xmin = time - wsize,
+    xmax = time + wsize,
+    ymin = pliney,
+    ymax = pline,
+    fill = plinecol
+    ),
+    colour = NA,
+    show.legend = FALSE
+    ) +
+geom_text(size = 2)
 ```
 
 
