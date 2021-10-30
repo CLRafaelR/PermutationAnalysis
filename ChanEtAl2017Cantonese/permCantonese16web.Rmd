@@ -438,55 +438,24 @@ subjmeans.df |>
 
 ```{r cor-9th-10th-pipe-2}
 subjmeans.df |>
-  (\(x) {
-    filter(
-      x,
-      win == 9,
-      HeadNoun == "ge3"
-      ) |>
-      dplyr::select(target) ->
-      Ge3.9th
-
-    filter(
-      x,
-      win == 10,
-      HeadNoun == "ge3"
-      ) |>
-      dplyr::select(target) ->
-      Ge3.10th
-
-    list(Ge3.9th, Ge3.10th)
-  })() |>
-  (
-    \(x){
-      cor(x[[1]], x[[2]])
-      }
-  )()
-```
-
-```{r cor-9th-10th-pipe-3}
-subjmeans.df |>
   (\(x){
-    list(
+    cor(
+      # win = 9, ge3
       filter(
         x,
         win == 9,
         HeadNoun == "ge3"
-        ) |>
-        dplyr::select(target),
+      ) |>
+      dplyr::select(target),
+      # win = 10, ge3
       filter(
-        x,
-        win == 10,
-        HeadNoun == "ge3"
-        ) |>
-        dplyr::select(target)
+      x,
+      win == 10,
+      HeadNoun == "ge3"
+      ) |>
+      dplyr::select(target)
     )
-  })() |>
-  (
-    \(x){
-      cor(x[[1]], x[[2]])
-      }
-  )()
+  })()
 ```
 
 Since we have a significant three way interaction of HeadNoun, SentenceType, and window, we can do posthocs.
@@ -612,7 +581,7 @@ pdata <- both |>
   filter(!is.na(time)) |>
   mutate(
     cobject = if_else(SentenceType == "Subject", 0.5, -0.5),
-    win = as.integer(time/wdivsize),
+    win = as.integer(time / wdivsize),
     time = win * wdivsize
   )
 
@@ -627,8 +596,8 @@ means.df <- pdata |>
   ) |>
   ungroup() |>
   mutate(
-    tstr = NA,
-    pstr = 1000
+    tstr = NaN,
+    pstr = NaN
     )
 
 # We do this for each timebin in the data
@@ -654,21 +623,21 @@ for (l in c("CL", "ge3")){
         \(x){
           means.df <<- means.df |>
             mutate(
-              tstr = case_when(
-                time == t & HeadNoun == l ~
+              tstr = if_else(
+                time == t & HeadNoun == l,
                 # extraction of the observed t-value
                 x |>
                   dplyr::select("statistic") |>
                   pull(),
-                TRUE ~ tstr
+                tstr
                 ),
-              pstr = case_when(
-                time == t & HeadNoun == l ~
+              pstr = if_else(
+                time == t & HeadNoun == l,
                 # extraction of the observed p-value
                 x |>
                   dplyr::select("p.value") |>
                   pull(),
-                TRUE ~ pstr
+                pstr
                 )
             )
         }
@@ -699,21 +668,21 @@ walk2(
           \(x){
             means.df <<- means.df |>
               mutate(
-                tstr = case_when(
-                  time == .x & HeadNoun == .y ~
+                tstr = if_else(
+                  time == .x & HeadNoun == .y,
                   # extraction of the observed t-value
                   x |>
                     dplyr::select("statistic") |>
                     pull(),
-                  TRUE ~ tstr
+                  tstr
                   ),
-                pstr = case_when(
-                  time == .x & HeadNoun == .y ~
+                pstr = if_else(
+                  time == .x & HeadNoun == .y,
                   # extraction of the observed p-value
                   x |>
                     dplyr::select("p.value") |>
                     pull(),
-                  TRUE ~ pstr
+                  pstr
                   )
               )
           }
@@ -721,52 +690,50 @@ walk2(
     }
 )
 tictoc::toc()
+```
 
-means.df
-
+```{r}
 # to see these p-values, we draw them arbitrarily on the graph at 0.2.
 # when the p-value < 0.05, we draw a blue line above 0.2
 # when the p-value > 0.05, we draw an orange line below 0.2
 pliney = -0.1
 plinemax = 0.2
 
-means.df <- means.df |>
+wsize = mean(pdata$time[2:5] - pdata$time[1:4] - 8)/2
+
+means.df |>
   mutate(
     pline = pliney + plinemax * (0.05 - pstr),
     plinecol = if_else(pstr < 0.05, "a", "b"),
     SentenceType = factor(
       SentenceType,
-      levels = c("Subject","Object")
+      levels = c("Subject", "Object")
       )
-  )
-
-wsize = mean(pdata$time[2:5] - pdata$time[1:4] - 8)/2
-
-ggplot(
-  means.df,
-  aes(
-    x = time,
-    y = target,
-    colour = SentenceType
-    )
-  ) +
-  geom_line() +
-  scale_colour_brewer(palette = "Set1") +
-  scale_fill_brewer(palette = "Set2") +
-  # change background to white
-  theme_bw() +
-  facet_wrap(~ HeadNoun, ncol = 1) +
-  geom_rect(
+  ) |>
+  ggplot(
     aes(
-      xmin = time-wsize,
-      xmax = time+wsize,
-      ymin = pliney,
-      ymax = pline,
-      fill = plinecol
-      ),
-    colour = NA,
-    show.legend = FALSE
-    )
+      x = time,
+      y = target,
+      colour = SentenceType
+      )
+    ) +
+    geom_line() +
+    scale_colour_brewer(palette = "Set1") +
+    scale_fill_brewer(palette = "Set2") +
+    # change background to white
+    theme_bw() +
+    facet_wrap(~ HeadNoun, ncol = 1) +
+    geom_rect(
+      aes(
+        xmin = time - wsize,
+        xmax = time + wsize,
+        ymin = pliney,
+        ymax = pline,
+        fill = plinecol
+        ),
+      colour = NA,
+      show.legend = FALSE
+      )
 ```
 
 ```{r}
@@ -781,30 +748,54 @@ means.df <- means.df |>
     cnum = 1
   )
 
+    means.df |>
+      filter(
+        time == 66 &
+        HeadNoun == "ge3" &
+        SentenceType == "Object"
+      ) |>
+      (\(x){
+        pval <- x |> dplyr::select(pstr) |> abs()
+        tdir <- x |> dplyr::select(tstr)
+      })()
+
+
+
 for (l in c("CL", "ge3")){
   for (t in timelist[2:length(timelist)]){
-    onetime = subset(means.df,time == t & HeadNoun == l & SentenceType == "Object")
-    pval = abs(onetime$pstr)
-    tdir = onetime$tstr
-    if (pval < 0.05 & lastpval > 0.05 ){
-      cnum = cnum + 1  # increase cluster number when entering a significant cluster from a non-significant cluster
+    means.df |>
+      filter(
+        time == t &
+        HeadNoun == l &
+        SentenceType == "Object"
+      ) |>
+      (\(x){
+        pval <- x |> dplyr::select(pstr) |> abs()
+        tdir <- x |> dplyr::select(tstr)
+      })()
+    # increase cluster number
+    # when entering a significant cluster from a non-significant cluster
+    if (pval < 0.05 & lastpval > 0.05){
+      cnum = cnum + 1
     }
-    if (pval > 0.05 ){
-      cnum = cnum + 1 # increase cluster number when not significant
+    # increase cluster number when not significant
+    if (pval > 0.05){
+      cnum = cnum + 1
     }else{
-      # if t value flips direction, even if both are signif, 
+      # if t value flips direction, even if both are signif,
       # we should treat those as separate clusters
       if (lasttdir * tdir < 0){
-        cnum = cnum + 1 
+        cnum = cnum + 1
       }
     }
     lastpval = pval
     lasttdir = tdir
     means.df$cnum[means.df$time == t & means.df$HeadNoun == l] = cnum
   }
-  cnum = cnum + 1  # new cluster for different HeadNounuages
+  # new cluster for different HeadNoun
+  cnum = cnum + 1
 }
-head(means.df, 10)
+View(means.df, 10)
 
 # this shows the clusters
 ggplot(
